@@ -202,4 +202,35 @@ LGWA_Soundcheck:
         fmax:             4
         spacing:          linear
         df:               1./4096.
-
+CE3:
+        lat:              34.00000311241721 * np.pi / 180.
+        lon:              145.00014808714283 * np.pi / 180.
+        opening_angle:    np.pi / 2.
+        azimuth:          126. * np.pi / 180. #needs to be diff
+        psd_data:         CE1_psd.txt
+        duty_factor:      0.85
+        detector_class:   earthL
+        plotrange:        10, 1000, 1e-25, 1e-20
+        fmin:             8
+        fmax:             2048. #1024
+        spacing:          geometric
+        df:               1./4.
+        npoints:          5000
+        arm_length:       20000
+GLOC:
+        lat:              -85 * np.pi / 180.
+        lon:              0
+        opening_angle:    np.pi / 3.
+        azimuth:          np.pi
+        psd_data:         GLOC_optimal_psd.txt
+        duty_factor:      1
+        detector_class:   lunarDelta
+        #number_stations:  4
+        mission_lifetime: 20 * 3.16e7
+        plotrange:        0.25, 1000, 1e-25, 1e-17
+        fmin:             0.25
+        fmax:             2048.
+        spacing:          geometric
+        df:               1./4.
+        npoints:          5000
+        arm_length:       40000

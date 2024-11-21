@@ -44,6 +44,24 @@ def check_and_convert_to_mass_1_mass_2(parameters):
             local_params['mass_2'] = local_params['mass_2_source'] * (1 + local_params['redshift'])
     return local_params
 
+def check_and_convert_to_lambda_1_lambda_2(parameters):
+    """
+    Added in by A. Yelikar to allow for error constraints on lambda_tilde and delta_lambda_tilde, from Wade et al. https://arxiv.org/pdf/1402.5156, also in RIFT.lalsimutils:https://github.com/AnjaliYelikar/research-projects-RIT/blob/master/MonteCarloMarginalizeCode/Code/RIFT/lalsimutils.py#L2615
+    """
+    local_params = parameters.copy()
+    eta = (local_params['mass_1'] * local_params['mass_2'])/((local_params['mass_1'] + local_params['mass_2'])**2 )
+
+    a = (8.0/13.0)*(1.0+7.0*eta-31.0*eta**2)
+    b = (8.0/13.0)*np.sqrt(1.0-4.0*eta)*(1.0+9.0*eta-11.0*eta**2)
+    c = (1.0/2.0)*np.sqrt(1.0-4.0*eta)*(1.0 - 13272.0*eta/1319.0 + 8944.0*eta**2/1319.0)
+    d = (1.0/2.0)*(1.0 - 15910.0*eta/1319.0 + 32850.0*eta**2/1319.0 + 3380.0*eta**3/1319.0)
+    den = (a+b)*(c-d) - (a-b)*(c+d)
+
+    if ('lambda_tilde' in local_params.keys()) and ('delta_lambda_tilde' in local_params.keys()):
+            local_params['lambda_1'] = ( (c-d) * local_params['lambda_tilde'] - (a-b) * local_params['delta_lambda_tilde'] )/den
+            local_params['lambda_2'] = (-(c+d) * local_params['lambda_tilde'] + (a+b) * local_params['delta_lambda_tilde'] )/den
+    return local_params
+
 def fisco(parameters):
     """
     Compute the frequency of the innermost stable circular orbit
