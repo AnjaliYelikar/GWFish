@@ -82,6 +82,29 @@ class DetectorComponent:
 
             self.psd_data = np.loadtxt(self.psd_path / detector_def['psd_data'])
             self.psd_data[:, 1] = self.psd_data[:, 1]/eval(str(detector_def['number_stations']))
+
+        elif detector_def['detector_class'] == 'lunarDelta':
+
+            self.lat = eval(str(detector_def['lat']))
+            self.lon = eval(str(detector_def['lon']))
+            self.ephem = ephem.MoonEphemeris()
+
+            self.arm_azimuth = eval(str(detector_def['azimuth']))
+            self.opening_angle = eval(str(detector_def['opening_angle']))
+
+            self.arm_azimuth += 2.*self.id*np.pi/3.
+
+            self.e_long = np.array([-np.sin(self.lon), np.cos(self.lon), 0])
+            self.e_lat = np.array(
+                [-np.sin(self.lat) * np.cos(self.lon), -np.sin(self.lat) * np.sin(self.lon), np.cos(self.lat)])
+            self.position = np.array(
+                [np.cos(self.lat) * np.cos(self.lon), np.cos(self.lat) * np.sin(self.lon), np.sin(self.lat)])
+            self.e1 = np.cos(self.arm_azimuth) * self.e_long + np.sin(self.arm_azimuth) * self.e_lat
+            self.e2 = np.cos(self.arm_azimuth + self.opening_angle) * self.e_long + np.sin(
+                self.arm_azimuth + self.opening_angle) * self.e_lat
+
+            self.psd_data = np.loadtxt(self.psd_path / detector_def['psd_data'])
+
         elif detector_def['detector_class'] == 'satellitesolarorbit':
             self.L = eval(str(detector_def['arm_length']))
             self.eps = self.L / cst.AU / (2 * np.sqrt(3))
@@ -158,6 +181,9 @@ class Detector:
         if detector_def['detector_class'] == 'lunararray':
             self.location = 'moon'
             self.mission_lifetime = eval(str(detector_def['mission_lifetime']))
+        elif detector_def['detector_class'] == 'lunarDelta':
+            self.location = 'moon_Delta'
+            self.mission_lifetime = eval(str(detector_def['mission_lifetime']))
         elif (detector_def['detector_class'] == 'earthDelta') or (detector_def['detector_class'] == 'earthL'):
             self.L = eval(str(detector_def['arm_length']))
             self.location = 'earth'
@@ -165,7 +191,7 @@ class Detector:
             self.location = 'solarorbit'
             self.mission_lifetime = eval(str(detector_def['mission_lifetime']))
 
-        if (detector_def['detector_class'] == 'earthDelta') or (detector_def['detector_class'] == 'satellitesolarorbit'):
+        if (detector_def['detector_class'] == 'earthDelta') or (detector_def['detector_class'] == 'satellitesolarorbit') or (detector_def['detector_class'] == 'lunarDelta'):
             for k in np.arange(3):
                 self.components.append(DetectorComponent(name=name, component=k, detector_def=detector_def))
         elif detector_def['detector_class'] == 'lunararray':
@@ -356,6 +382,8 @@ def projection(parameters, detector, polarizations, timevector, redefine_tf_vect
             proj = projection_earth(parameters, detector, polarizations, new_timevector, in_band_slice, long_wavelength_approx = long_wavelength_approx)
         elif detector.location == 'moon':
             proj = projection_moon(parameters, detector, polarizations, new_timevector, in_band_slice)
+        elif detector.location == 'moon_Delta':
+            proj = projection_moon_Delta(parameters, detector, polarizations, new_timevector, in_band_slice)
         elif detector.location == 'solarorbit':
             proj = projection_solarorbit(parameters, detector, polarizations, new_timevector, in_band_slice)
         else:
@@ -674,6 +702,99 @@ def projection_moon(parameters, detector, polarizations, timevector, in_band_sli
 
     return proj
 
+def projection_moon_Delta(parameters, detector, polarizations, timevector, in_band_slice=slice(None)):
+    """
+    See Nishizawa et al. (2009) arXiv:0903.0528 for definitions of the polarisation tensors.
+    [u, v, w] represent the Earth-frame
+    [m, n, omega] represent the wave-frame
+    Note1: there is a typo in the definition of the wave-frame in Nishizawa et al.
+    Note2: it is computationally more expensive to use numpy.einsum instead of working with several vector quantities
+    """
+
+    # timevector = parameters['geocent_time'] * np.ones_like(timevector)  # switch off Earth's rotation
+
+    nf = len(polarizations[:, 0])
+    ff = detector.frequencyvector[in_band_slice, :]
+
+    components = detector.components
+    proj = np.zeros((nf, len(components)), dtype=complex)
+
+    if timevector.ndim == 1:
+        timevector = timevector[:, np.newaxis]
+
+    ra = parameters['ra']
+    dec = parameters['dec']
+    psi = parameters['psi']
+
+    theta = np.pi / 2. - dec
+    gmst = LunarMeanSiderealTime(timevector[in_band_slice])
+    phi = ra - gmst
+
+    # wave vector components
+    kx = -np.sin(theta) * np.cos(phi)
+    ky = -np.sin(theta) * np.sin(phi)
+    kz = -np.cos(theta)
+
+    # start_time = time.time()
+    # u = np.array([np.cos(theta) * np.cos(phi[:,0]), np.cos(theta) * np.sin(phi[:,0]), -np.sin(theta)*np.ones_like(phi[:,0])])
+    ux = np.cos(theta) * np.cos(phi[:, 0])
+    uy = np.cos(theta) * np.sin(phi[:, 0])
+    uz = -np.sin(theta)
+    # v = np.array([-np.sin(phi[:,0]), np.cos(phi[:,0]), np.zeros_like(phi[:,0])])
+    vx = -np.sin(phi[:, 0])
+    vy = np.cos(phi[:, 0])
+    vz = 0
+    # print("Creating vectors u,v: %s seconds" % (time.time() - start_time))
+
+    # start_time = time.time()
+    # m = -u * np.sin(psi) - v * np.cos(psi)
+    mx = -ux * np.sin(psi) - vx * np.cos(psi)
+    my = -uy * np.sin(psi) - vy * np.cos(psi)
+    mz = -uz * np.sin(psi) - vz * np.cos(psi)
+    # n = -u * np.cos(psi) + v * np.sin(psi)
+    nx = -ux * np.cos(psi) + vx * np.sin(psi)
+    ny = -uy * np.cos(psi) + vy * np.sin(psi)
+    nz = -uz * np.cos(psi) + vz * np.sin(psi)
+    # print("Creating vectors m, n: %s seconds" % (time.time() - start_time))
+
+    # start_time = time.time()
+    # hpij = np.einsum('ij,kj->jik', m, m) - np.einsum('ij,kj->jik', n, n)
+    # hcij = np.einsum('ij,kj->jik', m, n) + np.einsum('ij,kj->jik', n, m)
+    # hij = np.einsum('i,ijk->ijk', polarizations[:, 0], hpij) + np.einsum('i,ijk->ijk', polarizations[:, 1], hcij)
+    hxx = polarizations[in_band_slice, 0] * (mx * mx - nx * nx) + polarizations[in_band_slice, 1] * (mx * nx + nx * mx)
+    hxy = polarizations[in_band_slice, 0] * (mx * my - nx * ny) + polarizations[in_band_slice, 1] * (mx * ny + nx * my)
+    hxz = polarizations[in_band_slice, 0] * (mx * mz - nx * nz) + polarizations[in_band_slice, 1] * (mx * nz + nx * mz)
+    hyy = polarizations[in_band_slice, 0] * (my * my - ny * ny) + polarizations[in_band_slice, 1] * (my * ny + ny * my)
+    hyz = polarizations[in_band_slice, 0] * (my * mz - ny * nz) + polarizations[in_band_slice, 1] * (my * nz + ny * mz)
+    hzz = polarizations[in_band_slice, 0] * (mz * mz - nz * nz) + polarizations[in_band_slice, 1] * (mz * nz + nz * mz)
+    # print("Calculation GW tensor: %s seconds" % (time.time() - start_time))
+
+    # start_time = time.time()
+    for k in np.arange(len(components)):
+        e1 = components[k].e1
+        e2 = components[k].e2
+
+        # interferometer position
+        # x_det = components[k].position[0] * cst.R_earth
+        # y_det = components[k].position[1] * cst.R_earth
+        # z_det = components[k].position[2] * cst.R_earth
+        # phase_shift = np.squeeze(x_det * kx + y_det * ky + z_det * kz) * 2 * np.pi / cst.c * np.squeeze(ff)
+
+        phase_shift = components[k].ephem.phase_term(ra, dec, np.squeeze(timevector)[in_band_slice], np.squeeze(ff))
+
+
+        # proj[:, k] = 0.5*(np.einsum('i,jik,k->j', e1, hij, e1) - np.einsum('i,jik,k->j', e2, hij, e2))
+        proj[in_band_slice, k] = 0.5 * (e1[0] ** 2 - e2[0] ** 2) * hxx \
+                     + 0.5 * (e1[1] ** 2 - e2[1] ** 2) * hyy \
+                     + 0.5 * (e1[2] ** 2 - e2[2] ** 2) * hzz \
+                     + (e1[0] * e1[1] - e2[0] * e2[1]) * hxy \
+                     + (e1[0] * e1[2] - e2[0] * e2[2]) * hxz \
+                     + (e1[1] * e1[2] - e2[1] * e2[2]) * hyz
+
+        proj[in_band_slice, k] *= np.exp(-1.j * phase_shift)
+    # print("Calculation of projection: %s seconds" % (time.time() - start_time))
+
+    return proj
 
 def lisaGWresponse(detector):
     ff = detector.frequencyvector
