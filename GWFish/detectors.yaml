@@ -202,8 +202,8 @@ LGWA_Soundcheck:
         fmax:             4
         spacing:          linear
         df:               1./4096.
-CE3:
-        lat:              34.00000311241721 * np.pi / 180.
+CE3: # From GWBench paper https://iopscience.iop.org/article/10.1088/1361-6382/ac1618/pdf, table 3
+        lat:              -34.00000311241721 * np.pi / 180.
         lon:              145.00014808714283 * np.pi / 180.
         opening_angle:    np.pi / 2.
         azimuth:          126. * np.pi / 180. #needs to be diff
